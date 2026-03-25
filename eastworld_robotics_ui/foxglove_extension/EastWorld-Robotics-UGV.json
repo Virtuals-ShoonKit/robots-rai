@@ -1,0 +1,240 @@
+{
+  "configById": {
+    "Image!ugvcam": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/camera/color/image_raw"
+      }
+    },
+    "Markdown!2mlh3fo": {
+      "fontSize": 12
+    },
+    "Agent Panel.agent-panel!ugvagent": {},
+    "3D!ugv3dmap": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 22.160664819941292,
+        "phi": 7.070433730405436,
+        "thetaOffset": -89.67434516944773,
+        "targetOffset": [
+          0.7111835221197509,
+          2.9672422673632624,
+          2.769383406516336e-9
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-position",
+      "followTf": "base_link",
+      "scene": {
+        "enableStats": false,
+        "meshUpAxis": "z_up",
+        "backgroundColor": "#0d1117",
+        "transforms": {
+          "visible": true,
+          "showLabel": false,
+          "editable": false,
+          "enablePreloading": true,
+          "lineWidth": 1,
+          "axisSize": 0.06
+        }
+      },
+      "transforms": {
+        "frame:base_link": {
+          "visible": true
+        },
+        "frame:map": {
+          "visible": false
+        },
+        "frame:odom": {
+          "visible": false
+        },
+        "frame:imu_link": {
+          "visible": false
+        },
+        "frame:lidar_link": {
+          "visible": false
+        },
+        "frame:front_left_wheel": {
+          "visible": false
+        },
+        "frame:front_right_wheel": {
+          "visible": false
+        },
+        "frame:rear_left_wheel": {
+          "visible": false
+        },
+        "frame:rear_right_wheel": {
+          "visible": false
+        }
+      },
+      "topics": {
+        "/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.6,
+          "unknownColor": "#0d111700",
+          "invalidColor": "#0d111700"
+        },
+        "/global_costmap/costmap": {
+          "visible": false,
+          "colorMode": "costmap",
+          "alpha": 0.15
+        },
+        "/local_costmap/costmap": {
+          "visible": true,
+          "colorMode": "costmap",
+          "alpha": 0.25
+        },
+        "/plan": {
+          "visible": true,
+          "lineWidth": 0.06,
+          "gradient": [
+            "#58a6ffff",
+            "#1a5fb480"
+          ]
+        },
+        "/local_plan": {
+          "visible": true,
+          "lineWidth": 0.04,
+          "gradient": [
+            "#f0883eff",
+            "#bd561d80"
+          ]
+        },
+        "/received_global_plan": {
+          "visible": true,
+          "lineWidth": 0.05,
+          "gradient": [
+            "#58a6ffff",
+            "#1a5fb480"
+          ]
+        },
+        "/nav_scan": {
+          "visible": true,
+          "pointSize": 3,
+          "colorMode": "colormap",
+          "flatColor": "#f8554480",
+          "decayTime": 0,
+          "colorField": "intensity",
+          "colorMap": "turbo"
+        },
+        "/points": {
+          "visible": false
+        },
+        "/goal_pose": {
+          "visible": true
+        },
+        "/scout/robot_description": {
+          "visible": true
+        },
+        "/tf": {
+          "visible": true
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": true,
+          "drawBehind": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "ugv-grid-001",
+          "layerId": "foxglove.Grid",
+          "size": 30,
+          "divisions": 30,
+          "lineWidth": 1,
+          "color": "#21262d",
+          "position": [
+            0,
+            0,
+            -0.01
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "publish": {
+        "type": "pose",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "first": {
+      "first": "Image!ugvcam",
+      "second": "Markdown!2mlh3fo",
+      "direction": "column"
+    },
+    "second": {
+      "first": "Agent Panel.agent-panel!ugvagent",
+      "second": "3D!ugv3dmap",
+      "direction": "column"
+    },
+    "splitPercentage": 45.48
+  }
+}

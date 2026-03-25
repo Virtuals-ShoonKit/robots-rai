@@ -88,6 +88,9 @@ robots-rai/
 │   │   ├── embodiments/          # Robot identity, capabilities, waypoints
 │   │   ├── config.toml           # LLM vendor, task server bind, tracing config
 │   │   └── launch.sh             # Single-command launcher
+│   ├── zedmini/                  # ZED Mini camera robot (dry-testable)
+│   │   ├── dry_test_api.py       # Standalone dry-test: no ROS 2 required
+│   │   └── config.toml           # Ollama / VLM config
 │   ├── unitree_g1/               # Planned
 │   └── x500_quad/                # Planned
 ├── rai/                          # RAI framework (git submodule, Robotec.AI)
@@ -100,17 +103,52 @@ robots-rai/
 
 ---
 
-## Prerequisites
+## Host Setup (GPU workstation / server)
+
+The GPU host runs all LLM/VLM inference. No ROS 2 is needed here.
+
+### 1. Install vLLM
+
+```bash
+uv tool install vllm
+```
+
+### 2. Start vLLM
+
+Model downloads ~15 GB on first run.
+
+```bash
+vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
+    --dtype auto --max-model-len 4096 --host 0.0.0.0 --port 8000
+```
+
+### 3. (Optional) Ollama for embeddings
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve &
+ollama pull nomic-embed-text
+```
+
+### 4. Verify
+
+```bash
+curl http://localhost:8000/v1/models
+```
+
+From a robot or remote machine, replace `localhost` with the host's IP.
+
+---
+
+## Robot Embodiment Setup (Jetson Orin / dev machine)
+
+Everything below runs on the robot (or a dev machine standing in for one).
+
+### Prerequisites
 
 - Ubuntu 22.04 / ROS 2 Humble
 - Python 3.10
 - [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **GPU host**: NVIDIA GPU with CUDA, vLLM installed
-- **Robot**: Jetson Orin (or any ROS 2 machine) — no GPU required on robot
-
----
-
-## Setup
 
 ### 1. Clone with submodule
 
@@ -151,31 +189,7 @@ Verify:
 python -c "import fastapi, uvicorn, rai, rai_whoami; print('OK')"
 ```
 
-### 5. Set up the GPU host
-
-On the **GPU host** (workstation or server — not the robot):
-
-```bash
-# Install vLLM
-uv tool install vllm
-
-# Start vLLM (model downloads ~15 GB on first run)
-vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
-    --dtype auto --max-model-len 4096 --host 0.0.0.0 --port 8000
-
-# Optional: Ollama for embeddings
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve &
-ollama pull nomic-embed-text
-```
-
-Verify from the robot:
-
-```bash
-curl http://<gpu-host>:8000/v1/models
-```
-
-### 6. Configure the robot
+### 5. Configure the robot
 
 Edit `robots/scoutmini/config.toml` — point `[openai]` `base_url` at the GPU host:
 
@@ -219,24 +233,82 @@ Ctrl-C shuts everything down cleanly.
 
 ---
 
+## Dry-Testing (ZED Mini)
+
+Standalone dry-test script that runs **without a full ROS 2 agent**. It starts a FastAPI task server, captures frames from the ZED Mini camera, and sends them to an Ollama VLM for reasoning.
+
+### Camera modes
+
+| Mode | Flag | What it does |
+|------|------|-------------|
+| **pyzed SDK** (default) | _(none)_ | Opens the ZED directly via `pyzed.sl`. No ROS 2 needed. A rosbridge stub streams agent text topics to Foxglove. |
+| **ROS 2 — single terminal** | `--launch-ros2` | Auto-launches `zed_wrapper` + `foxglove_bridge` as subprocesses. Camera + agent topics are real ROS 2 topics; Foxglove connects at `ws://localhost:8765`. |
+| **ROS 2 — separate terminals** | `--ros2` | Same as above, but you start the ROS 2 nodes yourself. |
+| **Text-only** | `--no-camera` | No camera at all — text-only VLM. |
+
+### Quick start (no ROS 2)
+
+```bash
+source .venv/bin/activate
+
+python robots/zedmini/dry_test_api.py            # pyzed SDK
+python robots/zedmini/dry_test_api.py --no-camera # text-only
+```
+
+### Quick start (ROS 2 — one terminal)
+
+Requires a sourced ROS 2 workspace with `zed_wrapper` and `foxglove_bridge`:
+
+```bash
+source /opt/ros/humble/setup.bash
+source .venv/bin/activate
+python robots/zedmini/dry_test_api.py --launch-ros2
+```
+
+### Quick start (ROS 2 — separate terminals)
+
+```bash
+# Terminal 1
+ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zedm
+
+# Terminal 2
+ros2 run foxglove_bridge foxglove_bridge
+
+# Terminal 3
+python robots/zedmini/dry_test_api.py --ros2
+```
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | from `config.toml` | Ollama model name (e.g. `qwen3-vl:8b-thinking`) |
+| `--launch-ros2` | off | Auto-launch `zed_wrapper` + `foxglove_bridge` |
+| `--ros2` | off | Use rclpy (expects foxglove_bridge already running) |
+| `--camera-model` | `zedm` | ZED model for `ros2 launch` (with `--launch-ros2`) |
+| `--image-topic` | `/zedm/zed_node/rgb/color/rect/image` | Image topic. Append `/compressed` for CompressedImage. |
+| `--api-port` | `8090` | FastAPI port |
+
+---
+
 ## Sending Tasks
 
-### curl (no Foxglove needed)
+### curl
 
 ```bash
 # Check availability
 curl http://<robot-ip>:8090/status
-# → {"status":"available"}
 
 # Submit a task
-curl -X POST http://<robot-ip>:8090/execute_task \
+curl -X POST http://127.0.0.1:8090/execute_task \
   -H "Content-Type: application/json" \
-  -d '{"task": "navigate to the kitchen and report what you see"}'
-# → {"success":true,"content":"The task has been successfully initiated","task_id":1}
+  -d '{"task": "navigate to the playground and report what you see"}'
 
 # Poll until done
 curl http://<robot-ip>:8090/tasks/1/status
-# → {"status":"completed","content":"Arrived at the kitchen. I can see ..."}
+
+# Watch in a loop
+watch -n 2 'curl -s http://<robot-ip>:8090/tasks/1/status | python3 -m json.tool'
 ```
 
 ### Foxglove panel

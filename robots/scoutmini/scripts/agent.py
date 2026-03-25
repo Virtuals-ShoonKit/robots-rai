@@ -76,7 +76,7 @@ def main():
 
     agent.subscribe_source("/from_human", hri_connector)
 
-    start_task_server(task_manager, hri_connector, host=TASK_SERVER_HOST, port=TASK_SERVER_PORT)
+    start_task_server(task_manager, hri_connector, host=TASK_SERVER_HOST, port=TASK_SERVER_PORT, embodiment="scout-mini-rover")
 
     runner = AgentRunner([agent])
     runner.run_and_wait_for_shutdown()

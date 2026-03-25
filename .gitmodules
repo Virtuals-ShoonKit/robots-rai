@@ -5,6 +5,9 @@
 	path = devices/zed-ros2-wrapper
 	url = https://github.com/stereolabs/zed-ros2-wrapper.git
 	branch = master
-[submodule "eastworld_robotics_ui/foxglove-sdk"]		
+[submodule "eastworld_robotics_ui/foxglove-sdk"]
 	path = eastworld_robotics_ui/foxglove-sdk
 	url = https://github.com/foxglove/foxglove-sdk
+[submodule "eastworld_robotics_ui/foxglove_bridge"]
+	path = eastworld_robotics_ui/foxglove_bridge
+	url = https://github.com/foxglove/ros-foxglove-bridge.git

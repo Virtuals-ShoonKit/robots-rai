@@ -1,0 +1,297 @@
+{
+  "configById": {
+    "Image!17hhigt": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/drone_camera/image/h264"
+      },
+      "foxglovePanelTitle": ""
+    },
+    "Markdown!37wbprk": {
+      "fontSize": 12
+    },
+    "Agent Panel.agent-panel!32asbm3": {},
+    "3D!1x8fhfp": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 4.292775278855073,
+        "phi": 62.366725823380335,
+        "thetaOffset": -113.00498092932114,
+        "targetOffset": [
+          0.7009928832181513,
+          0.20213835313094825,
+          2.3340232788770894e-16
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "map",
+      "scene": {
+        "enableStats": true,
+        "meshUpAxis": "y_up",
+        "backgroundColor": "#212e3c",
+        "transforms": {
+          "visible": true,
+          "showLabel": true,
+          "editable": false,
+          "enablePreloading": true,
+          "lineWidth": 1
+        }
+      },
+      "transforms": {
+        "frame:base_link": {
+          "visible": true
+        },
+        "frame:map": {
+          "visible": true
+        },
+        "frame:camera_init": {
+          "visible": false
+        },
+        "frame:aft_mapped": {
+          "visible": false
+        },
+        "frame:map_ned": {
+          "visible": false
+        },
+        "frame:odom": {
+          "visible": false
+        },
+        "frame:imu_link": {
+          "visible": false
+        },
+        "frame:odom_ned": {
+          "visible": false
+        },
+        "frame:base_link_frd": {
+          "visible": false
+        }
+      },
+      "topics": {
+        "/cloud_registered_base": {
+          "visible": true
+        },
+        "/cloud_registered": {
+          "visible": true,
+          "stixelsEnabled": false,
+          "colorField": "_auto_distance",
+          "colorMode": "gradient",
+          "colorMap": "turbo",
+          "pointSize": 2.5,
+          "decayTime": 10
+        },
+        "/path": {
+          "visible": true,
+          "lineWidth": 0.05,
+          "gradient": [
+            "#b7ffb8ff",
+            "#00641880"
+          ]
+        },
+        "/cloud_registered_lidar": {
+          "visible": true
+        },
+        "/cloud_registered_body": {
+          "visible": true
+        },
+        "/cloud_effected": {
+          "visible": false
+        },
+        "/cloud_visual_sub_map_before": {
+          "visible": false
+        },
+        "/mavros/setpoint_position/local": {
+          "visible": false
+        },
+        "/Laser_map": {
+          "visible": false
+        },
+        "/mavros/local_position/pose": {
+          "visible": false
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": true,
+          "drawBehind": false,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "35e5d71a-1102-4a9d-bc89-275930eef2cc",
+          "layerId": "foxglove.Grid",
+          "size": 10,
+          "divisions": 10,
+          "lineWidth": 1,
+          "color": "#248eff",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    },
+    "Image!17hhigt": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/left_camera/image"
+      }
+    },
+    "Agent Panel.agent-panel!32asbm3": {},
+    "Plot!22tgosq": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mavros/odometry/out.pose.pose.position.x",
+          "enabled": true,
+          "color": "#4e98e2",
+          "id": "386aea5e-8703-4a53-a09c-f15e50b8c46a"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mavros/odometry/out.pose.pose.position.y",
+          "enabled": true,
+          "color": "#f5774d",
+          "id": "05c5fabf-cf6f-4127-a6e4-97acfe5688f1"
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/mavros/odometry/out.pose.pose.position.z",
+          "enabled": true,
+          "color": "#f7df71",
+          "id": "b71d90c4-677d-451c-8cb8-7ac6415b5b40"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "top",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 100
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "first": {
+      "first": "Image!17hhigt",
+      "second": "Markdown!37wbprk",
+      "direction": "column"
+    },
+    "second": {
+      "first": "Agent Panel.agent-panel!32asbm3",
+      "second": "3D!1x8fhfp",
+      "direction": "column"
+    },
+    "splitPercentage": 52.56782945736435
+  }
+}

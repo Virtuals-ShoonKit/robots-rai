@@ -89,16 +89,19 @@ class ExecuteTaskRequest(BaseModel):
     task: str
 
 
-def _build_app(task_manager: TaskManager, hri_connector: "ROS2HRIConnector") -> FastAPI:
+def _build_app(task_manager: TaskManager, hri_connector: "ROS2HRIConnector", embodiment: str = "") -> FastAPI:
     from rai.communication.ros2.messages import ROS2HRIMessage
 
     app = FastAPI(title="Robot Task Server", version="1.0.0")
 
     @app.get("/status")
     def status() -> dict[str, str]:
-        return {
+        payload: dict[str, str] = {
             "status": "busy" if task_manager.is_busy else "available",
         }
+        if embodiment:
+            payload["embodiment"] = embodiment
+        return payload
 
     @app.post("/execute_task")
     def execute_task(body: ExecuteTaskRequest) -> dict[str, Any]:
@@ -143,9 +146,10 @@ def start_task_server(
     hri_connector: "ROS2HRIConnector",
     host: str = "0.0.0.0",
     port: int = 8090,
+    embodiment: str = "",
 ) -> None:
     """Run uvicorn in a daemon thread so the ROS agent keeps the main thread."""
-    app = _build_app(task_manager, hri_connector)
+    app = _build_app(task_manager, hri_connector, embodiment=embodiment)
     config = uvicorn.Config(
         app,
         host=host,
