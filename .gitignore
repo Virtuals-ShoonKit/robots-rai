@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+dist/
+build/
+install/
+log/
+*.so
+.venv/
+venv/
+.config.toml.bak

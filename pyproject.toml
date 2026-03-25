@@ -1,0 +1,9 @@
+[project]
+name = "robots-rai"
+version = "0.1.0"
+description = "Multi-robot RAI workspace — Scout Mini, G1 Humanoid, Quadcopter"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = []

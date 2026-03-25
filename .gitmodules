@@ -1,0 +1,10 @@
+[submodule "rai"]
+	path = rai
+	url = /home/ubuntu/Desktop/VP/rai
+[submodule "devices/zed-ros2-wrapper"]
+	path = devices/zed-ros2-wrapper
+	url = https://github.com/stereolabs/zed-ros2-wrapper.git
+	branch = master
+[submodule "eastworld_robotics_ui/foxglove-sdk"]		
+	path = eastworld_robotics_ui/foxglove-sdk
+	url = https://github.com/foxglove/foxglove-sdk

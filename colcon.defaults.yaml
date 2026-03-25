@@ -1,0 +1,5 @@
+build:
+  base-paths:
+    - rai/src
+    - eastworld_robotics_ui/foxglove-sdk/ros
+    - devices/zed-ros2-wrapper/zed_wrapper

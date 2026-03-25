@@ -1,0 +1,45 @@
+[vendor]
+simple_model = "ollama"
+complex_model = "ollama"
+embeddings_model = "ollama"
+
+[ollama]
+simple_model = "qwen3-vl:8b-thinking"
+complex_model = "qwen3-vl:32b-thinking"
+embeddings_model = "nomic-embed-text"
+base_url = "http://localhost:11434"
+
+[openai]
+simple_model = "Qwen/Qwen2.5-VL-7B-Instruct"
+complex_model = "Qwen/Qwen2.5-VL-7B-Instruct"
+embeddings_model = "text-embedding-ada-002"
+base_url = "http://localhost:8000/v1/"
+
+[tracing]
+project = "zedmini-rai"
+
+[tracing.langfuse]
+use_langfuse = false
+host = "http://localhost:3000"
+
+[tracing.langsmith]
+use_langsmith = false
+host = "https://api.smith.langchain.com"
+
+[asr]
+recording_device_name = "default"
+transcription_model = "LocalWhisper"
+language = "en"
+vad_model = "SileroVAD"
+silence_grace_period = 0.3
+vad_threshold = 0.3
+use_wake_word = false
+wake_word_model = ""
+wake_word_threshold = 0.5
+wake_word_model_name = ""
+transcription_model_name = "small"
+
+[tts]
+vendor = "KokoroTTS"
+voice = "af_sarah"
+speaker_device_name = "default"

@@ -1,0 +1,24 @@
+# Top-level dependencies for robots-rai
+# Install with: uv pip install -r requirements.txt
+#
+# Requires: uv venv .venv --python 3.10 --system-site-packages
+# System apt packages: libportaudio2, ffmpeg
+
+# Task server (HTTP API on robot)
+fastapi
+uvicorn[standard]
+
+# Model serving
+vllm
+
+# RAI framework (editable from submodule)
+-e rai/src/rai_core
+-e rai/src/rai_whoami
+-e rai/src/rai_s2s
+
+# rai_s2s optional deps required at import time
+elevenlabs
+kokoro-onnx==0.3.3
+
+# Pin numpy <2 for ROS 2 Humble cv_bridge compatibility
+numpy<2
