@@ -5,7 +5,7 @@ Dry-test: FastAPI task server + ZED Mini live camera → Ollama VLM → Foxglove
 Starts:
   • http://localhost:8090  — FastAPI task REST API  (same as real robot)
 
-Camera modes:
+Image source modes:
   default       — pyzed SDK opens the ZED directly (no ROS2 needed).
                   A rosbridge-protocol stub on ws://localhost:9090 streams
                   agent text topics to Foxglove.
@@ -14,7 +14,18 @@ Camera modes:
                   foxglove_bridge bridges everything to ws://localhost:8765.
                   All in one terminal; Ctrl-C kills everything.
   --ros2        — same, but you start the ROS2 nodes yourself.
+  --rosbag PATH — replay images from a recorded ROS2 bag (sqlite3/mcap).
+                  Pure Python via 'rosbags' library, no ROS2 install needed.
+                  Frames advance in real-time (use --bag-speed to control).
   --no-camera   — text-only fallback (no camera at all).
+
+Navigation simulation:
+  --nav-delay N           — max navigate_to_pose duration (default: 10s).
+  --nav-update-interval N — seconds between progress checks (default: 2s).
+  --nav-vlm-feedback      — at each interval, ask the VLM to evaluate the
+                            scene and decide CONTINUE/ARRIVED/OBSTACLE/ADJUST.
+                            Navigation can end early on ARRIVED or OBSTACLE.
+  Without --nav-vlm-feedback, navigation uses a fixed delay with progress events.
 
 In Foxglove Studio:
   --ros2 mode:  Open connection → Foxglove WebSocket → ws://localhost:8765
@@ -23,6 +34,15 @@ In Foxglove Studio:
 Usage:
     python robots/zedmini/dry_test_api.py
     python robots/zedmini/dry_test_api.py --no-camera
+
+    # Replay a recorded bag (auto-detects image topic):
+    python robots/zedmini/dry_test_api.py --rosbag ~/bags/hallway_run
+    python robots/zedmini/dry_test_api.py --rosbag ~/bags/hallway_run --bag-speed 2.0
+
+    # Replay with explicit topic and longer nav delay:
+    python robots/zedmini/dry_test_api.py --rosbag ~/bags/hallway_run \\
+        --bag-image-topic /zedm/zed_node/rgb/image_rect_color \\
+        --nav-delay 20 --nav-update-interval 3
 
     # ROS2 + foxglove_bridge — single terminal:
     python robots/zedmini/dry_test_api.py --launch-ros2
@@ -55,6 +75,7 @@ import types
 from pathlib import Path
 
 import base64
+import bisect
 
 import cv2
 import numpy as np
@@ -84,6 +105,19 @@ SYSTEM_PROMPT_VISION = (
 SYSTEM_PROMPT_TEXT = (
     "You are a robot assistant. The user gives you a task. "
     "Reason through it and reply with what you would do. Be concise."
+)
+
+SYSTEM_PROMPT_NAV_CHECK = (
+    "You are a mobile robot's visual navigation system. You are currently navigating "
+    "to a destination. Analyse the camera image and decide your next action.\n\n"
+    "Respond with EXACTLY one line in this format:\n"
+    "  ACTION: observation\n\n"
+    "Where ACTION is one of:\n"
+    "  CONTINUE — path ahead is clear, destination not yet reached\n"
+    "  ARRIVED  — you can see you have reached or are very close to the destination\n"
+    "  OBSTACLE — something is blocking the path\n"
+    "  ADJUST   — you need to change direction or approach angle\n\n"
+    "Keep the observation to one concise sentence."
 )
 
 THINK_START = "<think>"
@@ -268,6 +302,138 @@ class ROS2Node:
         self._node.destroy_node()
 
 
+# ── Rosbag image replay (pure Python — no ROS2 install needed) ────────────────
+
+class RosbagImageSource:
+    """Replay images from a ROS2 bag file (sqlite3 / mcap) as a frame source.
+
+    Implements the same ``get_frame_b64()`` contract as ZEDCapture / ROS2Node so
+    it can be used as a drop-in image source for the VLM.  Frames advance based
+    on wall-clock time × *speed* multiplier and loop automatically when the bag
+    ends.
+    """
+
+    def __init__(self, bag_path: str, image_topic: str | None = None, speed: float = 1.0):
+        try:
+            from rosbags.rosbag2 import Reader
+            from rosbags.typesys import Stores, get_typestore
+        except ImportError:
+            raise SystemExit(
+                "[bag] 'rosbags' package not found.\n"
+                "      Install with:  pip install rosbags"
+            )
+
+        self._speed = max(0.1, speed)
+        self._frames: list[tuple[int, bytes]] = []  # (timestamp_ns, jpeg_bytes)
+
+        typestore = get_typestore(Stores.ROS2_HUMBLE)
+
+        with Reader(bag_path) as reader:
+            all_topics = [c.topic for c in reader.connections]
+
+            if image_topic is None:
+                image_conns = [c for c in reader.connections if "Image" in c.msgtype]
+                if not image_conns:
+                    raise ValueError(
+                        f"No image topics found in bag. Available: {all_topics}"
+                    )
+                image_topic = image_conns[0].topic
+                print(f"[bag]  auto-detected image topic: {image_topic}")
+
+            connections = [c for c in reader.connections if c.topic == image_topic]
+            if not connections:
+                raise ValueError(
+                    f"Topic '{image_topic}' not in bag. Available: {all_topics}"
+                )
+
+            conn = connections[0]
+            is_compressed = "CompressedImage" in conn.msgtype
+
+            for connection, timestamp, rawdata in reader.messages(connections=connections):
+                msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
+                jpeg = (
+                    self._compressed_to_jpeg(msg)
+                    if is_compressed
+                    else self._raw_to_jpeg(msg)
+                )
+                if jpeg is not None:
+                    self._frames.append((timestamp, jpeg))
+
+        if not self._frames:
+            raise ValueError(f"No valid image frames on topic '{image_topic}'")
+
+        self._frames.sort(key=lambda x: x[0])
+        self._timestamps = [f[0] for f in self._frames]
+        self._t0_bag = self._timestamps[0]
+        self._t0_wall = time.monotonic()
+        self._duration_ns = self._timestamps[-1] - self._t0_bag
+
+        dur_s = self._duration_ns / 1e9
+        mem_mb = sum(len(f[1]) for f in self._frames) / (1024 * 1024)
+        print(
+            f"[bag]  loaded {len(self._frames)} frames from '{image_topic}'  "
+            f"({dur_s:.1f}s, {mem_mb:.0f} MB, speed={self._speed}x)"
+        )
+
+    # ── image decoders ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compressed_to_jpeg(msg) -> bytes | None:
+        data = bytes(msg.data)
+        fmt = getattr(msg, "format", "")
+        if "jpeg" in fmt.lower() or "jpg" in fmt.lower():
+            return data
+        arr = np.frombuffer(data, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return None
+        _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return jpeg.tobytes()
+
+    @staticmethod
+    def _raw_to_jpeg(msg) -> bytes | None:
+        h, w = msg.height, msg.width
+        enc = getattr(msg, "encoding", "bgr8")
+        raw = np.frombuffer(bytes(msg.data), dtype=np.uint8)
+        try:
+            if enc in ("bgra8", "8UC4"):
+                bgr = cv2.cvtColor(raw.reshape((h, w, 4)), cv2.COLOR_BGRA2BGR)
+            elif enc in ("bgr8", "8UC3"):
+                bgr = raw.reshape((h, w, 3))
+            elif enc == "rgb8":
+                bgr = cv2.cvtColor(raw.reshape((h, w, 3)), cv2.COLOR_RGB2BGR)
+            elif enc == "mono8":
+                bgr = raw.reshape((h, w, 1))
+            else:
+                bgr = raw.reshape((h, w, -1))
+        except ValueError:
+            return None
+        _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return jpeg.tobytes()
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def get_frame_b64(self) -> str | None:
+        if not self._frames:
+            return None
+
+        elapsed_wall = time.monotonic() - self._t0_wall
+        elapsed_bag_ns = int(elapsed_wall * self._speed * 1e9)
+
+        if self._duration_ns > 0:
+            elapsed_bag_ns = min(elapsed_bag_ns, self._duration_ns)
+
+        target_ts = self._t0_bag + elapsed_bag_ns
+        idx = bisect.bisect_right(self._timestamps, target_ts)
+        idx = min(max(idx - 1, 0), len(self._frames) - 1)
+
+        return base64.b64encode(self._frames[idx][1]).decode()
+
+    def close(self) -> None:
+        self._frames.clear()
+        self._timestamps.clear()
+
+
 # ── Stub ROS2 imports so task_server.py loads without a ROS2 install ──────────
 
 class _FakeHRIMessage:
@@ -278,11 +444,23 @@ class _FakeHRIMessage:
 class _FakeHRIConnector:
     """Calls the real Ollama VLM with a live ZED Mini frame per task."""
 
-    def __init__(self, task_manager, ros_publish_fn, model: str, zed: "ZEDCapture | None"):
+    def __init__(
+        self,
+        task_manager,
+        ros_publish_fn,
+        model: str,
+        zed: "ZEDCapture | ROS2Node | RosbagImageSource | None",
+        nav_delay: float = 10.0,
+        nav_update_interval: float = 2.0,
+        nav_vlm_feedback: bool = False,
+    ):
         self._tm = task_manager
         self._pub = ros_publish_fn      # callable(topic, msg_dict)
         self._model = model
         self._zed = zed
+        self._nav_delay = nav_delay
+        self._nav_update_interval = nav_update_interval
+        self._nav_vlm_feedback = nav_vlm_feedback
 
     def send_message(self, msg, topic: str):
         task_text = getattr(msg, "text", "")
@@ -344,23 +522,103 @@ class _FakeHRIConnector:
         """Run a mock tool, publish Foxglove events.
 
         Returns (json_result_str, frame_b64_or_None).
-        frame_b64 is a fresh ZED snapshot for tools that move the robot.
+        frame_b64 is a fresh snapshot for tools that move the robot.
         """
         self._pub("/agent/events", {"data": json.dumps({"event": "start", "tool": name, "args": args})})
         self._pub_str("/agent/status", f"executing:{name}")
         frame_b64: str | None = None
+        t_start = time.monotonic()
 
         if name == "navigate_to_pose":
             x, y = args.get("x", 0.0), args.get("y", 0.0)
             dest = args.get("description", f"({x}, {y})")
-            print(f"[nav]  navigating to {dest}  x={x} y={y}")
-            time.sleep(2.0)
-            result = {"success": True, "message": f"Arrived at {dest}", "x": x, "y": y}
-            # grab a fresh frame to show Ollama what the camera sees on arrival
+            delay = self._nav_delay
+            interval = self._nav_update_interval
+            use_vlm = self._nav_vlm_feedback and self._zed is not None
+            mode_label = "vlm-feedback" if use_vlm else f"fixed {delay:.0f}s"
+            print(f"[nav]  navigating to {dest}  x={x} y={y}  ({mode_label})")
+
+            self._pub_str("/agent/status", "navigating: planning")
+            self._pub("/agent/events", {"data": json.dumps({
+                "event": "nav_start", "tool": name,
+                "destination": dest, "x": x, "y": y,
+                "estimated_s": delay, "vlm_feedback": use_vlm,
+            })})
+            time.sleep(min(1.0, delay * 0.1))
+
+            elapsed = time.monotonic() - t_start
+            update_idx = 0
+            nav_action = "CONTINUE"
+            nav_observations: list[str] = []
+
+            while elapsed < delay:
+                sleep_s = min(interval, delay - elapsed)
+                if sleep_s > 0:
+                    time.sleep(sleep_s)
+                elapsed = time.monotonic() - t_start
+                progress = min(elapsed / delay, 1.0)
+                update_idx += 1
+
+                cur_x = round(progress * x, 2)
+                cur_y = round(progress * y, 2)
+
+                vlm_action: str | None = None
+                vlm_observation: str | None = None
+
+                if use_vlm:
+                    snap = self._zed.get_frame_b64()
+                    if snap:
+                        self._pub_str("/agent/status", f"navigating: {progress * 100:.0f}% (checking scene)")
+                        vlm_action, vlm_observation = self._vlm_nav_check(
+                            snap, dest, progress * 100,
+                        )
+                        nav_action = vlm_action
+                        nav_observations.append(f"[{progress*100:.0f}%] {vlm_action}: {vlm_observation}")
+                        print(f"[nav-vlm] #{update_idx} {vlm_action}: {vlm_observation}")
+
+                        self._pub_str("/agent/reasoning", f"[nav {progress*100:.0f}%] {vlm_observation}")
+                elif self._zed:
+                    snap = self._zed.get_frame_b64()
+                    if snap:
+                        print(f"[nav]  progress {progress * 100:.0f}% — scene #{update_idx}")
+
+                event_data: dict = {
+                    "event": "nav_progress", "tool": name,
+                    "progress_pct": round(progress * 100, 1),
+                    "current_x": cur_x, "current_y": cur_y,
+                    "destination": dest,
+                    "elapsed_s": round(elapsed, 1),
+                    "remaining_s": round(max(0, delay - elapsed), 1),
+                }
+                if vlm_action:
+                    event_data["vlm_action"] = vlm_action
+                    event_data["vlm_observation"] = vlm_observation
+                self._pub("/agent/events", {"data": json.dumps(event_data)})
+                self._pub_str("/agent/status", f"navigating: {progress * 100:.0f}%")
+
+                if use_vlm and nav_action in ("ARRIVED", "OBSTACLE"):
+                    print(f"[nav-vlm] early stop: {nav_action}")
+                    break
+
+            if nav_action == "ARRIVED":
+                result = {"success": True, "message": f"Arrived at {dest}", "x": x, "y": y}
+            elif nav_action == "OBSTACLE":
+                result = {
+                    "success": False,
+                    "message": f"Obstacle detected en route to {dest}",
+                    "x": cur_x, "y": cur_y,
+                    "observation": nav_observations[-1] if nav_observations else "",
+                }
+            else:
+                result = {"success": True, "message": f"Arrived at {dest}", "x": x, "y": y}
+
+            if nav_observations:
+                result["nav_log"] = nav_observations
+
             if self._zed:
                 frame_b64 = self._zed.get_frame_b64()
                 if frame_b64:
-                    print(f"[nav]  camera snapshot attached ({len(frame_b64)//1024} KB)")
+                    print(f"[nav]  final snapshot ({len(frame_b64) // 1024} KB)")
 
         elif name == "get_current_pose":
             result = {"x": 0.0, "y": 0.0, "yaw_deg": 0.0, "frame": "map"}
@@ -370,14 +628,71 @@ class _FakeHRIConnector:
         else:
             result = {"error": f"Unknown tool: {name}"}
 
-        elapsed = 2.0 if name == "navigate_to_pose" else 0.05
-        self._pub("/agent/events", {"data": json.dumps({"event": "end", "result": result, "elapsed_s": elapsed})})
+        elapsed_total = time.monotonic() - t_start
+        self._pub("/agent/events", {"data": json.dumps({
+            "event": "end", "tool": name, "result": result,
+            "elapsed_s": round(elapsed_total, 2),
+        })})
         self._pub_str("/agent/status", "thinking")
-        print(f"[tool] {name} → {result}")
+        print(f"[tool] {name} → {result}  ({elapsed_total:.1f}s)")
         return json.dumps(result), frame_b64
 
     def _pub_str(self, topic: str, data: str) -> None:
         self._pub(topic, {"data": data})
+
+    _NAV_ACTIONS = {"CONTINUE", "ARRIVED", "OBSTACLE", "ADJUST"}
+
+    def _vlm_nav_check(
+        self, frame_b64: str, dest: str, progress_pct: float
+    ) -> tuple[str, str]:
+        """Ask the VLM to evaluate the current scene during navigation.
+
+        Returns (action, observation) where action is one of
+        CONTINUE / ARRIVED / OBSTACLE / ADJUST.
+        """
+        user_content = (
+            f"Destination: {dest}\n"
+            f"Navigation progress: {progress_pct:.0f}%\n"
+            "What do you see? Decide your action."
+        )
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_NAV_CHECK},
+            {"role": "user", "content": user_content, "images": [frame_b64]},
+        ]
+        try:
+            resp = requests.post(
+                f"{_OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": self._model,
+                    "messages": messages,
+                    "stream": False,
+                    "think": False,
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            raw_text = resp.json().get("message", {}).get("content", "").strip()
+
+            # Strip <think>...</think> if the model emits it despite think=False
+            cleaned = raw_text
+            while THINK_START in cleaned:
+                start = cleaned.find(THINK_START)
+                end = cleaned.find(THINK_END)
+                if end == -1:
+                    cleaned = cleaned[:start].strip()
+                    break
+                cleaned = (cleaned[:start] + cleaned[end + len(THINK_END):]).strip()
+
+            first_line = cleaned.split("\n")[0].strip()
+            token = first_line.split(":")[0].strip().upper()
+            observation = first_line.split(":", 1)[1].strip() if ":" in first_line else first_line
+
+            action = token if token in self._NAV_ACTIONS else "CONTINUE"
+            return action, observation
+
+        except Exception as e:
+            print(f"[nav-vlm] error: {e}")
+            return "CONTINUE", f"VLM check failed: {e}"
 
     def _run_ollama(self, task_text: str, task_id: int | None) -> None:
         """Agentic loop: grab ZED frame → Ollama → tool calls → final reply."""
@@ -690,6 +1005,12 @@ def main():
         help="Launch zed_wrapper + foxglove_bridge as subprocesses, then behave like --ros2. "
              "Requires a sourced ROS2 workspace with zed_wrapper & foxglove_bridge installed.",
     )
+    cam_group.add_argument(
+        "--rosbag", type=str, default=None, metavar="PATH",
+        help="Replay images from a ROS2 bag (sqlite3/mcap) instead of live camera. "
+             "No ROS2 install needed (uses 'rosbags' library). "
+             "Example: --rosbag ~/bags/hallway_run",
+    )
     parser.add_argument(
         "--camera-model", default="zedm",
         help="ZED camera model for ros2 launch (default: zedm). Only used with --launch-ros2.",
@@ -701,6 +1022,28 @@ def main():
              "Append /compressed for CompressedImage. "
              "Check with: ros2 topic list | grep image",
     )
+    parser.add_argument(
+        "--bag-image-topic", default=None, metavar="TOPIC",
+        help="Image topic to extract from the rosbag (auto-detected if omitted).",
+    )
+    parser.add_argument(
+        "--bag-speed", type=float, default=1.0,
+        help="Rosbag playback speed multiplier (default: 1.0 = real-time).",
+    )
+    parser.add_argument(
+        "--nav-delay", type=float, default=10.0,
+        help="Simulated navigate_to_pose duration in seconds (default: 10).",
+    )
+    parser.add_argument(
+        "--nav-update-interval", type=float, default=2.0,
+        help="Seconds between navigation progress updates (default: 2).",
+    )
+    parser.add_argument(
+        "--nav-vlm-feedback", action="store_true",
+        help="During navigation, periodically ask the VLM to evaluate the scene "
+             "and decide CONTINUE/ARRIVED/OBSTACLE/ADJUST. Requires a camera or "
+             "rosbag image source. Navigation ends early on ARRIVED or OBSTACLE.",
+    )
     args = parser.parse_args()
 
     # --launch-ros2 implies --ros2
@@ -708,14 +1051,20 @@ def main():
         args.ros2 = True
         _launch_ros2_nodes(camera_model=args.camera_model)
 
-    # ── camera source + publish function ──────────────────────────────────────
-    zed: ZEDCapture | ROS2Node | None = None
+    # ── camera / image source + publish function ──────────────────────────────
+    zed: ZEDCapture | ROS2Node | RosbagImageSource | None = None
     publish_fn = ros_publish  # default: rosbridge stub
 
     if args.ros2:
         ros2_node = ROS2Node(args.image_topic)
         zed = ros2_node
         publish_fn = ros2_node.publish
+    elif args.rosbag:
+        zed = RosbagImageSource(
+            bag_path=args.rosbag,
+            image_topic=args.bag_image_topic,
+            speed=args.bag_speed,
+        )
     elif not args.no_camera:
         try:
             zed = ZEDCapture()
@@ -730,7 +1079,12 @@ def main():
         ws_thread.start()
 
     task_manager = TaskManager()
-    hri_connector = _FakeHRIConnector(task_manager, publish_fn, model=args.model, zed=zed)
+    hri_connector = _FakeHRIConnector(
+        task_manager, publish_fn, model=args.model, zed=zed,
+        nav_delay=args.nav_delay,
+        nav_update_interval=args.nav_update_interval,
+        nav_vlm_feedback=args.nav_vlm_feedback,
+    )
 
     app = _build_app(task_manager, hri_connector)
     app.add_middleware(
@@ -743,12 +1097,17 @@ def main():
     if args.ros2:
         cam_label = f"ros2 → {args.image_topic}"
         foxglove_label = "foxglove_bridge → ws://localhost:8765"
+    elif args.rosbag:
+        cam_label = f"rosbag → {args.rosbag}  (speed={args.bag_speed}x)"
+        foxglove_label = f"rosbridge stub → ws://{args.host}:{args.ws_port}"
     else:
         cam_label = "pyzed SDK" if zed else "disabled (text-only)"
         foxglove_label = f"rosbridge stub → ws://{args.host}:{args.ws_port}"
 
     print(f"\nOllama model        → {args.model}  ({_OLLAMA_BASE_URL})")
-    print(f"ZED Mini camera     → {cam_label}")
+    print(f"Image source        → {cam_label}")
+    nav_mode = "VLM feedback" if args.nav_vlm_feedback else "fixed delay"
+    print(f"Nav simulation      → {nav_mode}, max={args.nav_delay}s, check every {args.nav_update_interval}s")
     print(f"Dry-test API        → http://{args.host}:{args.api_port}")
     print(f"  GET  /status")
     print(f"  POST /execute_task   body: {{\"task\": \"...\"}}")
